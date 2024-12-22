@@ -1,112 +1,156 @@
-For a Kubernetes Job with a single pod that dynamically adjusts memory allocation based on runtime needs, you can achieve this with **Vertical Pod Autoscaler (VPA)**. Here's how you can configure it:
+Here’s the step-by-step process, including every single code snippet required, to create a Spring Boot app and run it as a Kubernetes job.
 
 ---
 
-### **Step 1: Define a Job with Resource Requests and Limits**
-Start by defining a Kubernetes Job that specifies initial memory requests and limits. These serve as a baseline for VPA to adjust.
+### 1. Spring Boot Application
 
-**`spring-boot-job.yaml`**:
+#### File: `pom.xml`
+Add dependencies to your Spring Boot project:
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+</dependencies>
+```
+
+---
+
+#### File: `src/main/java/com/example/demo/DemoApplication.java`
+Create the main application with a simple task:
+```java
+package com.example.demo;
+
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class DemoApplication implements CommandLineRunner {
+
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);
+    }
+
+    @Override
+    public void run(String... args) {
+        System.out.println("Running the Spring Boot Kubernetes Job!");
+        // Add your logic here
+    }
+}
+```
+
+---
+
+### 2. Dockerize the Spring Boot Application
+
+#### File: `Dockerfile`
+Create the Dockerfile for the Spring Boot app:
+```dockerfile
+FROM openjdk:21-jdk-alpine
+VOLUME /tmp
+ARG JAR_FILE=target/demo-0.0.1-SNAPSHOT.jar
+COPY ${JAR_FILE} app.jar
+ENTRYPOINT ["java", "-jar", "/app.jar"]
+```
+
+---
+
+#### Commands to Build Docker Image
+1. Package the application:
+   ```bash
+   mvn clean package
+   ```
+2. Build the Docker image:
+   ```bash
+   docker build -t spring-boot-job:latest .
+   ```
+
+---
+
+### 3. Kubernetes Job Configuration
+
+#### File: `k8s-job.yaml`
+Define the Kubernetes job:
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: spring-boot-job
 spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 3
   template:
     spec:
       containers:
-      - name: spring-boot-job
+      - name: spring-boot-container
         image: spring-boot-job:latest
-        imagePullPolicy: Never
         resources:
           requests:
-            memory: "512Mi" # Minimum memory required
+            memory: "512Mi"
             cpu: "500m"
           limits:
-            memory: "1Gi"   # Maximum memory allowed initially
+            memory: "1Gi"
             cpu: "1"
+        imagePullPolicy: Never
       restartPolicy: Never
 ```
 
-Apply the Job:
+---
+
+### 4. Deploy and Run the Kubernetes Job
+
+#### Step 1: Enable Kubernetes in Docker Desktop
+Ensure Kubernetes is enabled in Docker Desktop.
+
+#### Step 2: Load the Docker Image into Kubernetes
+If you’re using Kind (Kubernetes in Docker), load the Docker image:
 ```bash
-kubectl apply -f spring-boot-job.yaml
+kind load docker-image spring-boot-job:latest
+```
+If not, skip this step.
+
+#### Step 3: Apply the Job YAML File
+Run the following command to create the job in Kubernetes:
+```bash
+kubectl apply -f k8s-job.yaml
+```
+
+#### Step 4: Check the Job Status
+Monitor the job:
+```bash
+kubectl get jobs
+kubectl logs job/spring-boot-job
 ```
 
 ---
 
-### **Step 2: Enable Vertical Pod Autoscaler**
-Vertical Pod Autoscaler (VPA) adjusts resource requests and limits based on actual usage. Follow these steps:
+### 5. Clean Up Resources
 
-#### 1. **Install VPA**
-If not already installed, deploy the Vertical Pod Autoscaler in your cluster:
-```bash
-kubectl apply -f https://github.com/kubernetes/autoscaler/releases/latest/download/vertical-pod-autoscaler.yaml
-```
-
-Verify VPA components are running:
-```bash
-kubectl get pods -n kube-system | grep vpa
-```
-
----
-
-#### 2. **Create a VPA Resource**
-Define a VPA configuration for your Job's pod. This will allow Kubernetes to increase the memory allocation as needed.
-
-**`vpa.yaml`**:
-```yaml
-apiVersion: autoscaling.k8s.io/v1
-kind: VerticalPodAutoscaler
-metadata:
-  name: spring-boot-job-vpa
-spec:
-  targetRef:
-    apiVersion: batch/v1
-    kind: Job
-    name: spring-boot-job
-  updatePolicy:
-    updateMode: "Auto" # Automatically adjusts resource requests and limits
-```
-
-Apply the VPA resource:
-```bash
-kubectl apply -f vpa.yaml
-```
-
----
-
-### **Step 3: Monitor VPA Adjustments**
-The VPA will monitor the resource usage of your Job's pod and dynamically adjust the memory requests and limits based on actual usage.
-
-- **Check Recommendations:**
-  ```bash
-  kubectl describe vpa spring-boot-job-vpa
-  ```
-  This will show the current memory and CPU adjustments made by the VPA.
-
-- **View Logs:**
-  Use `kubectl logs` to check if your Spring Boot application behaves as expected with the adjusted memory.
-
----
-
-### **Step 4: Clean Up Resources**
-Once your Job completes, you can delete the resources:
+Once the job completes, you can clean it up:
 ```bash
 kubectl delete job spring-boot-job
-kubectl delete vpa spring-boot-job-vpa
 ```
 
 ---
 
-### **Additional Notes**
-1. **Ensure Proper Testing**:
-   Test the memory adjustments in a staging environment to ensure the application performs well under dynamic memory conditions.
+### Full Directory Structure
+Here’s how your project should look:
+```
+spring-boot-job/
+├── Dockerfile
+├── k8s-job.yaml
+├── pom.xml
+└── src/
+    ├── main/
+    │   ├── java/
+    │   │   └── com/example/demo/
+    │   │       └── DemoApplication.java
+    │   └── resources/
+```
 
-2. **Avoid Limits for Unlimited Memory**:
-   If you don't want a memory cap, you can omit the `limits` section in your Job manifest. This allows the container to use as much memory as required, limited only by the node's capacity.
+---
 
-3. **Combine with Resource Monitoring**:
-   Use `kubectl top pod` or a monitoring tool like Prometheus and Grafana to track memory usage over time.
-
-Let me know if you need further assistance!
+With this complete setup, you can create, run, and monitor your Spring Boot application as a Kubernetes job. Let me know if you need any help with this!
